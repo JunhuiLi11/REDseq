@@ -1,0 +1,157 @@
+%\VignetteIndexEntry{REDseq Vignette}
+%\VignetteDepends{REDseq}
+%\VignetteKeywords{Sequencing}
+%\VignettePackage{REDseq}
+\documentclass[12pt]{article}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{fullpage}
+\usepackage[authoryear,round]{natbib}
+\bibliographystyle{plainnat}
+
+\newcommand{\Rfunction}[1]{{\texttt{#1}}}
+\newcommand{\Robject}[1]{{\texttt{#1}}}
+\newcommand{\Rpackage}[1]{{\textit{#1}}}
+
+\author{Lihua Julie Zhu\footnote{julie.zhu@umassmed.edu}}
+\begin{document}
+\title{The REDseq user's guide}
+
+\maketitle
+
+\tableofcontents
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Introduction}
+
+Restriction Enzyme digestion (RED) followed by high throughput sequencing (REDseq) enables genome wide differentiation of highly accessible regions and inaccessible regions. Comparing the profiles of restriction enzyme (RE) digestion among different cell types, developmental stages,  disease stages, or different tissues facilitates deciphering of complex regulation network of cell differentiation, developmental control, and disease etiology and progression. We have developed a Bioconductor package called \Rpackage{REDSeq} to address the fundamental upstream analysis tasks of REDseq dataset.  We have implemented functions for building genomic map of restriction enzyme sites (\Rfunction{buildREmap}), assigning sequencing tags to RE sites (\Rfunction{assignSeq2REsite}), visualizing genome-wide distribution of differentially cut regions (\Rfunction{distanceHistSeq2RE}) and the distance distribution of sequence tags to corresponding RE sites (\Rfunction{distanceHistSeq2RE}), generating count table for identifying statistically significant RE sites (\Rfunction{summarizeByRE}).  We have leveraged \Rpackage{BSgenome} on implementing function \Rfunction{buildREmap} for building genome-wide RE maps. The input data for \Rfunction{assignSeq2REsite} are represented as GRanges, for efficiently associating sequences with RE sites. It first identifies RE sites that have mapped sequence tags around the cut position taking consideration of user-defined offset, sequence length and strand in the aligned sequences. The user-defined offset guards against imperfect sticky end repair and primer addition process. These RE sites are used as seeds for assigning the remaining tags depending on which of five strategies the users select for partitioning sequences associated with multiple RE sites, i.e., unique, average, estimate, best and random. For experiment with at least two conditions with biological replicates, count summary generated from \Rfunction{summarizeByRE} can be easily used for identifying differentially cut RE sites using either \Rpackage{DESeq} or \Rpackage{edgeR}. Differentially cut RE sites can be annotated to the nearest gene using \Rpackage{ChIPpeakAnno}. In addition, for early stage experiments without replicates, \Rfunction{compareREDseq} outputs differentially cut RE sites between two experimental conditions using Fisher's Exact Test. For experiment with one experimental condition, \Rfunction{binom.test.REDseq} outputs differentially cut RE sites in the genome. Multiplicity adjustment functions from \Rpackage{multtest} package were integrated in both functions.
+
+\section{Examples of using REDseq}
+
+\subsection{Task 1:  Build a RE map for a genome}
+
+Given a fasta/fastq file containing the restriction enzyme recognition site and a BSgenome object, the function \Rfunction{buildREmap} builds a genome-wide RE map.
+
+\begin{scriptsize}
+<<>>=
+	library(REDseq)
+	REpatternFilePath = system.file("extdata", "examplePattern.fa", package="REDseq")
+	library(BSgenome.Celegans.UCSC.ce2)
+	myMapList = buildREmap( REpatternFilePath, BSgenomeName=Celegans, outfile="example.REmap", chr='all')
+@
+\end{scriptsize}
+
+\subsection{Task 2:  Assign mapped sequence tags to RE site}
+
+Given a mapped sequence tags as a GRanges and REmap as a Granges, \Rfunction{assignSeq2REsite} function assigns mapped sequence tags to RE site depending on the strategy users select. There are five strategies implemented, i.e., unique, average, estimate, best and random. For details,  type help(\Rfunction{assignSeq2REsite}) in a R session.
+	
+\begin{scriptsize}
+<<>>=
+	library(REDseq)
+	data(example.REDseq.list)
+	data(example.map.list)
+
+	r.unique = assignSeq2REsite(example.REDseq.list, example.map.list, cut.end ='5',
+	cut.offset = 1, seq.length = 36, allowed.offset = 5, 
+	min.FragmentLength = 60, max.FragmentLength = 300, 
+	partitionMultipleRE = "unique")
+
+	r.average = assignSeq2REsite(example.REDseq.list, example.map.list, cut.end ='5',
+	cut.offset = 1, seq.length = 36, allowed.offset = 5, min.FragmentLength = 60,
+	max.FragmentLength = 300, partitionMultipleRE = "average")
+
+	r.random = assignSeq2REsite(example.REDseq.list, example.map.list, cut.end ='5',
+	cut.offset = 1, seq.length = 36, allowed.offset = 5, min.FragmentLength = 60,
+	 max.FragmentLength = 300, partitionMultipleRE = "random")
+
+	r.best = assignSeq2REsite(example.REDseq.list, example.map.list, cut.end ='5',
+	cut.offset = 1, seq.length = 36, allowed.offset = 5, min.FragmentLength = 60,
+	max.FragmentLength = 300, partitionMultipleRE = "best")
+
+	r.estimate = assignSeq2REsite(example.REDseq.list, example.map.list, cut.end ='5',
+	cut.offset = 1, seq.length = 36, allowed.offset = 5, min.FragmentLength = 60,
+	max.FragmentLength = 300, partitionMultipleRE = "estimate")
+	head(r.estimate$passed.filter)
+@
+
+The above examples are for single-end sequencing data. For paired-end sequencing data, please create inputS.RD and inputE.RD from input.RD first with start(input.RD) and end(input.RD), where inputS.RD contains the start of the input.RD and inputE.RD contains the end of the input.RD. Then call assignSeq2REsite twice with inputS.RD and inputE.RD respectively. Please set min.FragmentLength = 0, max.FragmentLength = 1, seq.length = 1 with both calls.
+
+\end{scriptsize}
+
+\subsection{Task 3:  Visualize the distribution of cut frequency in selected genomic regions and the distance distribution of sequence tags to corresponding RE sites }
+
+\begin{scriptsize}
+<<>>=
+data(example.assignedREDseq)
+@
+\end{scriptsize}
+
+\begin{scriptsize}
+\begin{figure}
+\centering
+<<fig1,fig=TRUE>>=
+plotCutDistribution(example.assignedREDseq,example.map.list, chr="2",
+xlim =c(3012000, 3020000))
+@
+\caption{Plot to show the distribution of cut frequency in the selected genomic-regions with the function \Rfunction{plotCutDistribution}. The red triangle is the expected cut frequency for each RE site.}
+\label{fig1}
+\end{figure}
+\end{scriptsize}
+
+
+\begin{scriptsize}
+\begin{figure}
+\centering
+<<fig2,fig=TRUE>>=
+distanceHistSeq2RE(example.assignedREDseq,ylim=c(0,25))
+@
+\caption{Plot to show the distribution of distance of sequence tags to associated RE sites with the function \Rfunction{distanceHistSeq2RE}.}
+\label{fig2}
+\end{figure}
+\end{scriptsize}
+\clearpage
+
+\subsection{Task 4:  Generating count table for identifying statistically significant RE sites}
+
+Once you have obtained the assigned RE sites, you can use the function \Rfunction{summarizeByRE} to obtain a count table for identifying statistically significant RE sites using \Rpackage{DEseq} or \Rpackage{edgeR}.
+
+\begin{scriptsize}
+<<>>=
+REsummary  =summarizeByRE(example.assignedREDseq,by="Weight")
+@
+\end{scriptsize}
+
+\subsection{Task 5:  Identifying differential cut RE sites for experiment with one experiment condition}
+
+\begin{scriptsize}
+<<>>=
+binom.test.REDseq(REsummary)
+@
+\end{scriptsize}
+
+\subsection{Task 6:  Identifying differential cut RE sites for early stage experiment without replicates}
+
+\begin{scriptsize}
+<<>>=
+x= cbind(c("RE1", "RE2", "RE3", "RE4"), c(10,1,100, 0),c(5,5,50, 40))
+colnames(x) = c("REid", "control", "treated")
+compareREDseq(x)
+@
+\end{scriptsize}
+
+\section{References}
+\begin{enumerate}
+\item Roberts, R.J., Restriction endonucleases. CRC Crit Rev Biochem, 1976. 4(2): p. 123-64.
+\item Kessler, C. and V. Manta, Specificity of restriction endonucleases and DNA modification methyltransferases a review (Edition 3). Gene, 1990. 92(1-2): p. 1-248.
+\item Pingoud, A., J. Alves, and R. Geiger, Restriction enzymes. Methods Mol Biol, 1993. 16: p. 107-200.
+\item bibitem{Anders10} Anders, S. and W. Huber, Differential expression analysis for sequence count data. Genome Biol, 2010. 11(10): p. R106.
+\item Robinson, M.D., D.J. McCarthy, and G.K. Smyth, edgeR: a Bioconductor package for differential expression analysis of digital gene expression data. Bioinformatics, 2010. 26(1): p. 139-40.
+\item Zhu, L.J., et al., ChIPpeakAnno: a Bioconductor package to annotate ChIP-seq and ChIP-chip data. BMC Bioinformatics, 2010. 11: p. 237.
+\item Pages, H., BSgenome package. http://bioconductor.org/packages/2.8/bioc/vignettes/
+BSgenome/inst/doc/GenomeSearching.pdf
+\item Zhu, L.J., et al., REDseq: A Bioconductor package for Analyzing High Throughput Sequencing Data from Restriction Enzyme Digestion. (In preparation)
+\end{enumerate}
+\section{Session Info}
+<<>>=
+sessionInfo()
+@
+\end{document}
